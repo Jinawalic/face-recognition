@@ -115,8 +115,8 @@ export default function LoginPage({ apiBaseUrl, onLoginSuccess }: LoginPageProps
   }
 
   return (
-    <div className="min-h-full flex items-center justify-center p-6 mt-25 overflow-y-hidden">
-      <div className="w-full max-w-md rounded-3xl border border-white/10 bg-white/5 backdrop-blur-2xl p-8 shadow-2xl relative overflow-hidden group">
+    <div className="min-h-screen py-12 lg:py-0 flex items-center justify-center p-6 overflow-y-auto">
+      <div className="w-full max-w-md rounded-3xl border border-white/10 bg-white/5 backdrop-blur-2xl p-6 lg:p-10 shadow-2xl relative overflow-hidden group">
         <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-10 transition-opacity">
           <ShieldCheck className="w-32 h-32 rotate-12" />
         </div>

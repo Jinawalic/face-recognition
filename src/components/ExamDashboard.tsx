@@ -213,17 +213,17 @@ export default function ExamDashboard({ apiBaseUrl, auth, onLogout }: ExamDashbo
   }, [started, terminated])
 
   return (
-    <div className="min-h-full">
-      <div className="mx-auto max-w-6xl p-6">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+    <div className="min-h-screen bg-[#0A0A0A]">
+      <div className="mx-auto max-w-6xl p-4 lg:p-6 pb-20">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between py-6">
           <div>
-            <div className="text-3xl font-bold tracking-tight text-white mt-1">Welcome, <span className="text-[#44A194]">{fullName}</span></div>
+            <div className="text-2xl lg:text-3xl font-black tracking-tight text-white mt-1">Welcome, <span className="text-[#44A194]">{fullName}</span></div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center justify-between lg:justify-end gap-3 border-t lg:border-none border-white/5 pt-4 lg:pt-0">
             <div
               className={[
-                'rounded-full border px-4 py-1.5 text-xs font-bold uppercase tracking-wider',
+                'rounded-full border px-4 py-1.5 text-[10px] lg:text-xs font-black uppercase tracking-widest',
                 statusPill.cls,
               ].join(' ')}
             >
@@ -232,24 +232,25 @@ export default function ExamDashboard({ apiBaseUrl, auth, onLogout }: ExamDashbo
 
             <button
               onClick={onLogout}
-              className="rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 px-6 py-2.5 text-sm font-semibold transition-all backdrop-blur-sm flex items-center gap-2"
+              className="rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 px-5 lg:px-6 py-2.5 text-xs lg:text-sm font-black transition-all backdrop-blur-sm flex items-center gap-2"
             >
               <LogOut className="w-4 h-4" /> Logout
             </button>
           </div>
         </div>
 
-        <div className="mt-8 flex flex-col gap-2">
-          <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-4 shadow-2xl shadow-red-500/5">
-            <div className="flex items-center gap-2 text-red-400 font-black text-xs uppercase tracking-widest mb-3">
+        <div className="mt-4 lg:mt-8 flex flex-col gap-6">
+          <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-5 shadow-2xl shadow-red-500/5">
+            <div className="flex items-center gap-2 text-red-400 font-black text-xs uppercase tracking-widest mb-2">
               <AlertTriangle className="w-4 h-4" />
               Critical Warning
             </div>
-            <p className="text-sm text-red-200/60 leading-relaxed font-medium">
-              Exceeding 3 irregularities will trigger an automatic <span className="text-red-400 font-bold">permanent suspension</span> of your session. Results will be invalidated.
+            <p className="text-[11px] lg:text-xs text-red-200/50 leading-relaxed font-bold uppercase tracking-tight">
+              Exceeding 3 irregularities will trigger an automatic <span className="text-red-400">permanent suspension</span>. Results will be invalidated.
             </p>
           </div>
-          <div className="relative rounded-3xl border border-white/10 bg-white/5 p-8 shadow-2xl backdrop-blur-xl min-h-[400px]">
+          <div className="relative rounded-3xl border border-white/10 bg-white/5 p-4 lg:p-10 shadow-2xl backdrop-blur-xl min-h-[400px]">
+
             {started && !isSubmitted ? (
               <div className="flex flex-col lg:flex-row gap-8">
                 {/* Left Side: Exam Interface */}
