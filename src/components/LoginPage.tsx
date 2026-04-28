@@ -1,12 +1,11 @@
 'use client'
 import { useEffect, useMemo, useState, FormEvent } from 'react'
 import { apiPost } from '@/lib/api'
-import { getBannedMessage, isLocallyBanned, normalizeMatric, AuthState } from '@/lib/storage'
+import { normalizeMatric, clearLocalBan, AuthState } from '@/lib/storage'
+import { useSearchParams } from 'next/navigation'
 import {
   ShieldCheck,
   User,
-  Lock,
-  Key,
   AlertCircle,
   Loader2,
   GraduationCap,
@@ -19,41 +18,22 @@ interface LoginPageProps {
 }
 
 export default function LoginPage({ apiBaseUrl, onLoginSuccess }: LoginPageProps) {
-  const [mode, setMode] = useState<'student' | 'admin'>('student')
-
   const [matricNumber, setMatricNumber] = useState('')
-  const [adminUsername, setAdminUsername] = useState('')
-  const [adminPassword, setAdminPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [userStatus, setUserStatus] = useState<'active' | 'banned'>('active')
   const [bannedBanner, setBannedBanner] = useState('')
 
-  const locallyBanned = useMemo(() => {
-    if (mode !== 'student') return false
-    const key = normalizeMatric(matricNumber)
-    return key ? isLocallyBanned(key) : false
-  }, [mode, matricNumber])
+  const searchParams = useSearchParams()
 
   useEffect(() => {
-    const key = normalizeMatric(matricNumber)
-    if (mode === 'student' && key && locallyBanned) {
+    if (searchParams.get('kickedOut') === 'true') {
       setUserStatus('banned')
-      setBannedBanner(
-        getBannedMessage(key) ||
-        'You have been logged out due to three consecutive irregularities. Contact your administrator.',
-      )
-    } else if (!locallyBanned) {
-      setUserStatus('active')
-      setBannedBanner('')
+      setBannedBanner('You have been logged out due to ten consecutive irregularities. Contact your administrator.')
     }
-  }, [mode, matricNumber, locallyBanned])
+  }, [searchParams])
 
-  const canSubmit =
-    !submitting &&
-    (mode === 'student'
-      ? normalizeMatric(matricNumber).length > 0 && userStatus !== 'banned'
-      : adminUsername.trim().length > 0 && adminPassword.length > 0)
+  const canSubmit = !submitting && normalizeMatric(matricNumber).length > 0
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -63,48 +43,39 @@ export default function LoginPage({ apiBaseUrl, onLoginSuccess }: LoginPageProps
 
     setSubmitting(true)
     try {
-      if (mode === 'student') {
-        const matric = normalizeMatric(matricNumber)
-        const data = await apiPost(`${apiBaseUrl}/auth/student-login`, { matricNumber: matric })
+      const matric = normalizeMatric(matricNumber)
+      const data = await apiPost(`${apiBaseUrl}/auth/student-login`, { matricNumber: matric })
 
-        if (data?.is_banned) {
-          setUserStatus('banned')
-          setBannedBanner(
-            data?.message ||
-            'You have been logged out due to three consecutive irregularities. Contact your administrator.',
-          )
-          return
-        }
-
-        onLoginSuccess({
-          token: data?.token || 'dev-token',
-          role: 'student',
-          user: {
-            matricNumber: data?.matricNumber || matric,
-            surname: data?.surname || '',
-            firstName: data?.firstName || '',
-            lastName: data?.lastName || '',
-            department: data?.department || ''
-          },
-        })
-      } else {
-        const data = await apiPost(`${apiBaseUrl}/auth/admin-login`, {
-          username: adminUsername,
-          password: adminPassword,
-        })
-
-        onLoginSuccess({
-          token: data?.token || 'dev-token',
-          role: 'admin',
-          user: { username: data?.username || adminUsername },
-        })
+      if (data?.is_banned) {
+        setUserStatus('banned')
+        setBannedBanner(
+          data?.message ||
+          'You have been logged out due to ten consecutive irregularities. Contact your administrator.',
+        )
+        return
       }
+
+      // If login succeeds, the server has confirmed they are NOT banned.
+      // We clear any local ban status that might be leftover.
+      clearLocalBan(matric)
+
+      onLoginSuccess({
+        token: data?.token || 'dev-token',
+        role: 'student',
+        user: {
+          matricNumber: data?.matricNumber || matric,
+          surname: data?.user?.surname || '',
+          firstName: data?.user?.firstName || '',
+          lastName: data?.user?.lastName || '',
+          department: data?.user?.department || ''
+        },
+      })
     } catch (err: any) {
       if (err?.status === 403 && err?.data?.is_banned) {
         setUserStatus('banned')
         setBannedBanner(
           err?.data?.message ||
-          'You have been logged out due to three consecutive irregularities. Contact your administrator.',
+          'You have been logged out due to ten consecutive irregularities. Contact your administrator.',
         )
       } else {
         setError(err?.message || 'Login failed')
@@ -122,45 +93,10 @@ export default function LoginPage({ apiBaseUrl, onLoginSuccess }: LoginPageProps
         </div>
 
         <div className="mb-8 relative z-10">
-          <div className="text-xs font-bold uppercase tracking-[0.3em] text-[#44A194] flex items-center gap-2">
+          <div className="text-xs font-bold uppercase tracking-[0.3em] text-[#0091ad] flex items-center gap-2">
             <ShieldCheck className="w-4 h-4" /> Proctoring System
           </div>
-          <div className="text-2xl font-bold tracking-tighter text-white mt-1">Sign In</div>
-        </div>
-
-        <div className="mb-8 grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-black/20 p-1 relative z-10">
-          <button
-            type="button"
-            onClick={() => {
-              setMode('student')
-              setError('')
-            }}
-            className={[
-              'rounded-xl px-4 py-3 text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2',
-              mode === 'student'
-                ? 'bg-[#44A194] text-white shadow-xl shadow-[#44A194]/20'
-                : 'bg-transparent text-white/40 hover:bg-white/5 hover:text-white',
-            ].join(' ')}
-          >
-            <GraduationCap className="w-4 h-4" /> Student
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setMode('admin')
-              setError('')
-              setBannedBanner('')
-              setUserStatus('active')
-            }}
-            className={[
-              'rounded-xl px-4 py-3 text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2',
-              mode === 'admin'
-                ? 'bg-[#44A194] text-white shadow-xl shadow-[#44A194]/20'
-                : 'bg-transparent text-white/40 hover:bg-white/5 hover:text-white',
-            ].join(' ')}
-          >
-            <ShieldCheck className="w-4 h-4" /> Admin
-          </button>
+          <div className="text-2xl font-bold tracking-tighter text-white mt-1">Student Sign In</div>
         </div>
 
         {bannedBanner ? (
@@ -178,73 +114,36 @@ export default function LoginPage({ apiBaseUrl, onLoginSuccess }: LoginPageProps
         ) : null}
 
         <form onSubmit={onSubmit} className="space-y-6 relative z-10">
-          {mode === 'student' ? (
-            <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-[0.25em] text-white/30 pl-1">Identification</label>
-              <div className="relative">
-                <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/20" />
-                <input
-                  required
-                  value={matricNumber}
-                  onChange={(e) => setMatricNumber(e.target.value)}
-                  className="w-full rounded-2xl bg-black/40 border border-white/10 p-4 pl-12 outline-none focus:border-[#44A194] focus:ring-4 focus:ring-[#44A194]/10 transition-all font-bold text-white placeholder:text-white/10"
-                  placeholder="CSC/21/XXXX"
-                  autoComplete="username"
-                />
-              </div>
-              <div className="text-[9px] text-white/20 uppercase font-black tracking-widest pl-1 mt-2">
-                Standard Matriculation Format
-              </div>
+          <div className="space-y-2">
+            <label className="text-[10px] font-black uppercase tracking-[0.25em] text-white/30 pl-1">Identification</label>
+            <div className="relative">
+              <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/20" />
+              <input
+                required
+                value={matricNumber}
+                onChange={(e) => setMatricNumber(e.target.value)}
+                className="w-full rounded-2xl bg-black/40 border border-white/10 p-4 pl-12 outline-none focus:border-[#0091ad] focus:ring-4 focus:ring-[#0091ad]/10 transition-all font-bold text-white placeholder:text-white/10"
+                placeholder="CSC/21/XXXX"
+                autoComplete="username"
+              />
             </div>
-          ) : (
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-[0.25em] text-white/30 pl-1">Admin UID</label>
-                <div className="relative">
-                  <Key className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/20" />
-                  <input
-                    required
-                    value={adminUsername}
-                    onChange={(e) => setAdminUsername(e.target.value)}
-                    className="w-full rounded-2xl bg-black/40 border border-white/10 p-4 pl-12 outline-none focus:border-[#44A194] transition-all font-bold text-white placeholder:text-white/10"
-                    placeholder="Username"
-                    autoComplete="username"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-[0.25em] text-white/30 pl-1">Passkey</label>
-                <div className="relative">
-                  <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/20" />
-                  <input
-                    required
-                    value={adminPassword}
-                    onChange={(e) => setAdminPassword(e.target.value)}
-                    className="w-full rounded-2xl bg-black/40 border border-white/10 p-4 pl-12 outline-none focus:border-[#44A194] transition-all font-bold text-white placeholder:text-white/10"
-                    type="password"
-                    placeholder="••••••••"
-                    autoComplete="current-password"
-                  />
-                </div>
-              </div>
+            <div className="text-[9px] text-white/20 uppercase font-black tracking-widest pl-1 mt-2">
+              Standard Matriculation Format
             </div>
-          )}
+          </div>
 
           <button
-            disabled={(mode === 'student' && userStatus === 'banned') || submitting}
+            disabled={submitting || !canSubmit}
             className={[
               'w-full rounded-2xl py-5 font-black uppercase tracking-[0.2em] text-[11px] transition-all active:scale-[0.98] flex items-center justify-center gap-3',
-              mode === 'student' && userStatus === 'banned'
-                ? 'bg-red-500/10 border border-red-500/20 text-red-400 cursor-not-allowed'
-                : 'bg-[#44A194] hover:bg-[#3B8F83] text-white shadow-2xl shadow-[#44A194]/30',
+              !canSubmit
+                ? 'bg-white/5 border border-white/10 text-white/40 cursor-not-allowed'
+                : 'bg-[#0091ad] hover:bg-[#007a91] text-white shadow-2xl shadow-[#0091ad]/30',
             ].join(' ')}
             type="submit"
           >
             {submitting ? (
               <Loader2 className="w-5 h-5 animate-spin" />
-            ) : (mode === 'student' && userStatus === 'banned') ? (
-              'Suspended'
             ) : (
               'Initialise Session'
             )}

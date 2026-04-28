@@ -14,8 +14,8 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className="h-full">
-      <body className={`${inter.className} h-full bg-[#0a0a0a] text-white antialiased selection:bg-[#44A194]/30`}>
-        <div className="fixed inset-0 bg-[radial-gradient(circle_at_50%_-20%,_#1a2a28_0%,_#0a0a0a_60%)] pointer-events-none" />
+      <body className={`${inter.className} h-full bg-[#0c1929] text-white antialiased selection:bg-[#0091ad]/30`}>
+        <div className="fixed inset-0 bg-[radial-gradient(ellipse_at_50%_0%,_#0d3352_0%,_#0c1929_65%)] pointer-events-none" />
         <AuthProvider>
           <main className="relative z-10 min-h-full">
             {children}

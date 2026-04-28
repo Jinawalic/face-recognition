@@ -1,44 +1,52 @@
-const AUTH_KEY = 'auth'
 
-export interface AuthState {
-  token: string;
-  role: 'student' | 'admin';
-  user: {
-    matricNumber?: string;
-    username?: string;
-    surname?: string;
-    firstName?: string;
-    lastName?: string;
-    department?: string;
-  };
-}
 
-export function normalizeMatric(matricNumber: string | null | undefined): string {
-  return String(matricNumber || '')
-    .trim()
-    .replace(/\s+/g, '')
-    .toLowerCase()
-}
+const STUDENT_AUTH_KEY = 'student_auth'
+const ADMIN_AUTH_KEY = 'admin_auth'
 
-export function getAuth(): AuthState | null {
+export function getStudentAuth(): AuthState | null {
   if (typeof window === 'undefined') return null
   try {
-    const raw = localStorage.getItem(AUTH_KEY)
+    const raw = localStorage.getItem(STUDENT_AUTH_KEY)
     return raw ? JSON.parse(raw) : null
   } catch {
     return null
   }
 }
 
-export function setAuth(auth: AuthState): void {
-  if (typeof window === 'undefined') return
-  localStorage.setItem(AUTH_KEY, JSON.stringify(auth))
+export function getAdminAuth(): AuthState | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = localStorage.getItem(ADMIN_AUTH_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
 }
 
-export function clearAuth(): void {
+export function setStudentAuth(auth: AuthState): void {
   if (typeof window === 'undefined') return
-  localStorage.removeItem(AUTH_KEY)
+  localStorage.setItem(STUDENT_AUTH_KEY, JSON.stringify(auth))
 }
+
+export function setAdminAuth(auth: AuthState): void {
+  if (typeof window === 'undefined') return
+  localStorage.setItem(ADMIN_AUTH_KEY, JSON.stringify(auth))
+}
+
+export function clearStudentAuth(): void {
+  if (typeof window === 'undefined') return
+  localStorage.removeItem(STUDENT_AUTH_KEY)
+}
+
+export function clearAdminAuth(): void {
+  if (typeof window === 'undefined') return
+  localStorage.removeItem(ADMIN_AUTH_KEY)
+}
+
+// Backward compatibility (if needed)
+export function getAuth(): AuthState | null { return getStudentAuth() }
+export function setAuth(auth: AuthState): void { setStudentAuth(auth) }
+export function clearAuth(): void { clearStudentAuth() }
 
 function userKey(id: string | null | undefined): string {
   const v = String(id || 'unknown').trim()
@@ -84,4 +92,31 @@ export function isLocallyBanned(id: string | null | undefined): boolean {
 export function getBannedMessage(id: string | null | undefined): string {
   if (typeof window === 'undefined') return ''
   return localStorage.getItem(getBannedMessageKey(id)) || ''
+}
+
+export function clearLocalBan(id: string | null | undefined): void {
+  if (typeof window === 'undefined') return
+  localStorage.removeItem(getBannedKey(id))
+  localStorage.removeItem(getBannedMessageKey(id))
+  localStorage.removeItem(getViolationCountKey(id))
+}
+
+export function normalizeMatric(matricNumber: string | null | undefined): string {
+  return String(matricNumber || '')
+    .trim()
+    .replace(/\s+/g, '')
+    .toLowerCase()
+}
+
+export interface AuthState {
+  token: string;
+  role: 'student' | 'admin';
+  user: {
+    matricNumber?: string;
+    username?: string;
+    surname?: string;
+    firstName?: string;
+    lastName?: string;
+    department?: string;
+  };
 }

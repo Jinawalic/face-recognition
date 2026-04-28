@@ -1,52 +1,73 @@
 'use client'
 
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react'
-import { getAuth, setAuth as saveAuth, clearAuth, AuthState } from '@/lib/storage'
+import { getStudentAuth, getAdminAuth, setStudentAuth as saveStudentAuth, setAdminAuth as saveAdminAuth, clearStudentAuth, clearAdminAuth, AuthState } from '@/lib/storage'
 
 interface AuthContextType {
+  studentAuth: AuthState | null;
+  adminAuth: AuthState | null;
+  loginStudent: (nextAuth: AuthState) => void;
+  loginAdmin: (nextAuth: AuthState) => void;
+  logoutStudent: () => void;
+  logoutAdmin: () => void;
+  loading: boolean;
+  // Fallbacks for generic components
   auth: AuthState | null;
   login: (nextAuth: AuthState) => void;
   logout: () => void;
-  loading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-/**
- * AuthProvider component that provides authentication state to the application.
- * Using an explicit function declaration and return type to resolve JSX component issues.
- */
 export function AuthProvider({ children }: { children: ReactNode }): React.ReactElement {
-  const [auth, setAuthState] = useState<AuthState | null>(null)
+  const [studentAuth, setStudentState] = useState<AuthState | null>(null)
+  const [adminAuth, setAdminState] = useState<AuthState | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // Initial load from storage
-    const savedAuth = getAuth()
-    setAuthState(savedAuth)
+    setStudentState(getStudentAuth())
+    setAdminState(getAdminAuth())
     setLoading(false)
 
-    // Sync across tabs
     const onStorage = () => {
-      setAuthState(getAuth())
+      setStudentState(getStudentAuth())
+      setAdminState(getAdminAuth())
     }
     window.addEventListener('storage', onStorage)
     return () => window.removeEventListener('storage', onStorage)
   }, [])
 
-  const login = (nextAuth: AuthState) => {
-    saveAuth(nextAuth)
-    setAuthState(nextAuth)
+  const loginStudent = (nextAuth: AuthState) => {
+    saveStudentAuth(nextAuth)
+    setStudentState(nextAuth)
   }
 
-  const logout = () => {
-    clearAuth()
-    setAuthState(null)
+  const loginAdmin = (nextAuth: AuthState) => {
+    saveAdminAuth(nextAuth)
+    setAdminState(nextAuth)
+  }
+
+  const logoutStudent = () => {
+    clearStudentAuth()
+    setStudentState(null)
+  }
+
+  const logoutAdmin = () => {
+    clearAdminAuth()
+    setAdminState(null)
   }
 
   return React.createElement(
     AuthContext.Provider,
-    { value: { auth, login, logout, loading } },
+    { value: { 
+      studentAuth, adminAuth, 
+      loginStudent, loginAdmin, 
+      logoutStudent, logoutAdmin, 
+      loading,
+      auth: studentAuth, // Default auth refers to student
+      login: loginStudent,
+      logout: logoutStudent
+    } },
     children
   )
 }

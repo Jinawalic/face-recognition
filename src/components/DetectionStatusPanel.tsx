@@ -40,9 +40,9 @@ export default function DetectionStatusPanel({ status }: { status: DetectionStat
   return (
     <div className="w-full bg-white/2 border border-white/5 rounded-xl p-3 mt-8 shadow-inner animate-fade-in relative overflow-hidden group">
       <div className="flex items-center justify-center mb-4 gap-2 relative z-10">
-        <div className="w-1.5 h-1.5 bg-[#44A194] rounded-full animate-ping" />
+        <div className="w-1.5 h-1.5 bg-[#0091ad] rounded-full animate-ping" />
         <h3 className="text-sm font-bold tracking-[0.15em] text-white capitalize flex items-center gap-2">
-          <Activity className="w-5 h-5 text-[#44A194]" />
+          <Activity className="w-5 h-5 text-[#0091ad]" />
           Sensory Intelligence
         </h3>
       </div>
