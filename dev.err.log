@@ -1,5 +1,5 @@
-Error: spawn EPERM
-    at ChildProcess.spawn (node:internal/child_process:420:11)
+﻿Error: spawn EPERM
+    at ChildProcess.spawn (node:internal/process:420:11)
     at spawn (node:child_process:786:9)
     at fork (node:child_process:174:10)
     at C:\Users\DELL\Desktop\face-recognition\node_modules\next\dist\cli\next-dev.js:253:45
