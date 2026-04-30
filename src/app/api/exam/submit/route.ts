@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 
+export const runtime = 'nodejs'
+
 export async function POST(request: NextRequest) {
   try {
     const { matricNumber, examId, answers, questions } = await request.json()
@@ -25,6 +27,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: 'Exam not found' }, { status: 404 })
     }
 
+    const existingResult = await prisma.result.findFirst({
+      where: {
+        studentId: student.id,
+        examId
+      },
+      select: { id: true }
+    })
+
+    if (existingResult) {
+      return NextResponse.json(
+        { message: 'You have already submitted this exam.' },
+        { status: 409 }
+      )
+    }
+
     // Calculate score
     let score = 0
     const total = questions.length
@@ -46,6 +63,17 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, id: result.id, score, total })
   } catch (error) {
+    if (
+      typeof error === 'object' &&
+      error &&
+      'code' in error &&
+      (error as any).code === 'P2002'
+    ) {
+      return NextResponse.json(
+        { message: 'You have already submitted this exam.' },
+        { status: 409 }
+      )
+    }
     console.error('Submit exam error:', error)
     return NextResponse.json({ message: 'Internal server error' }, { status: 500 })
   }

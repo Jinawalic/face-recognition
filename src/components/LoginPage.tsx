@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useMemo, useState, FormEvent } from 'react'
+import { useEffect, useState, FormEvent } from 'react'
 import { apiPost } from '@/lib/api'
 import { normalizeMatric, clearLocalBan, AuthState } from '@/lib/storage'
 import { useSearchParams } from 'next/navigation'
@@ -8,8 +8,7 @@ import {
   User,
   AlertCircle,
   Loader2,
-  GraduationCap,
-  ShieldAlert
+  GraduationCap
 } from 'lucide-react'
 
 interface LoginPageProps {
@@ -19,21 +18,23 @@ interface LoginPageProps {
 
 export default function LoginPage({ apiBaseUrl, onLoginSuccess }: LoginPageProps) {
   const [matricNumber, setMatricNumber] = useState('')
+  const [fullName, setFullName] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
-  const [userStatus, setUserStatus] = useState<'active' | 'banned'>('active')
-  const [bannedBanner, setBannedBanner] = useState('')
+  const [mode, setMode] = useState<'login' | 'register'>('login')
 
   const searchParams = useSearchParams()
 
   useEffect(() => {
-    if (searchParams.get('kickedOut') === 'true') {
-      setUserStatus('banned')
-      setBannedBanner('You have been logged out due to ten consecutive irregularities. Contact your administrator.')
+    if (searchParams.get('register') === 'true') {
+      setMode('register')
     }
   }, [searchParams])
 
-  const canSubmit = !submitting && normalizeMatric(matricNumber).length > 0
+  const canSubmit =
+    !submitting &&
+    normalizeMatric(matricNumber).length > 0 &&
+    (mode === 'login' || fullName.trim().length > 0)
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -44,19 +45,12 @@ export default function LoginPage({ apiBaseUrl, onLoginSuccess }: LoginPageProps
     setSubmitting(true)
     try {
       const matric = normalizeMatric(matricNumber)
-      const data = await apiPost(`${apiBaseUrl}/auth/student-login`, { matricNumber: matric })
+      const endpoint = mode === 'register' ? '/auth/student-register' : '/auth/student-login'
+      const payload = mode === 'register'
+        ? { matricNumber: matric, fullName: fullName.trim() }
+        : { matricNumber: matric }
+      const data = await apiPost(`${apiBaseUrl}${endpoint}`, payload)
 
-      if (data?.is_banned) {
-        setUserStatus('banned')
-        setBannedBanner(
-          data?.message ||
-          'You have been logged out due to ten consecutive irregularities. Contact your administrator.',
-        )
-        return
-      }
-
-      // If login succeeds, the server has confirmed they are NOT banned.
-      // We clear any local ban status that might be leftover.
       clearLocalBan(matric)
 
       onLoginSuccess({
@@ -64,6 +58,7 @@ export default function LoginPage({ apiBaseUrl, onLoginSuccess }: LoginPageProps
         role: 'student',
         user: {
           matricNumber: data?.matricNumber || matric,
+          id: data?.user?.id,
           surname: data?.user?.surname || '',
           firstName: data?.user?.firstName || '',
           lastName: data?.user?.lastName || '',
@@ -71,12 +66,9 @@ export default function LoginPage({ apiBaseUrl, onLoginSuccess }: LoginPageProps
         },
       })
     } catch (err: any) {
-      if (err?.status === 403 && err?.data?.is_banned) {
-        setUserStatus('banned')
-        setBannedBanner(
-          err?.data?.message ||
-          'You have been logged out due to ten consecutive irregularities. Contact your administrator.',
-        )
+      if (mode === 'login' && err?.status === 404) {
+        setMode('register')
+        setError('No account found. Register with your full name and matric number.')
       } else {
         setError(err?.message || 'Login failed')
       }
@@ -98,13 +90,6 @@ export default function LoginPage({ apiBaseUrl, onLoginSuccess }: LoginPageProps
           </div>
           <div className="text-2xl font-bold tracking-tighter text-white mt-1">Student Sign In</div>
         </div>
-
-        {bannedBanner ? (
-          <div className="mb-6 rounded-2xl border border-red-500/40 bg-red-500/10 p-5 text-sm text-red-200 flex gap-3 items-start animate-fade-in relative z-10">
-            <ShieldAlert className="w-5 h-5 shrink-0" />
-            <div className="font-medium leading-relaxed">{bannedBanner}</div>
-          </div>
-        ) : null}
 
         {error ? (
           <div className="mb-6 rounded-2xl border border-amber-500/40 bg-amber-500/10 p-5 text-sm text-amber-100 flex gap-3 items-center animate-fade-in relative z-10">
@@ -132,6 +117,23 @@ export default function LoginPage({ apiBaseUrl, onLoginSuccess }: LoginPageProps
             </div>
           </div>
 
+          {mode === 'register' && (
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-[0.25em] text-white/30 pl-1">Full Name</label>
+              <div className="relative">
+                <GraduationCap className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/20" />
+                <input
+                  required
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  className="w-full rounded-2xl bg-black/40 border border-white/10 p-4 pl-12 outline-none focus:border-[#0091ad] focus:ring-4 focus:ring-[#0091ad]/10 transition-all font-bold text-white placeholder:text-white/10"
+                  placeholder="John Doe"
+                  autoComplete="name"
+                />
+              </div>
+            </div>
+          )}
+
           <button
             disabled={submitting || !canSubmit}
             className={[
@@ -145,8 +147,19 @@ export default function LoginPage({ apiBaseUrl, onLoginSuccess }: LoginPageProps
             {submitting ? (
               <Loader2 className="w-5 h-5 animate-spin" />
             ) : (
-              'Initialise Session'
+              mode === 'register' ? 'Create Account' : 'Initialise Session'
             )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setMode((current) => (current === 'login' ? 'register' : 'login'))
+              setError('')
+            }}
+            className="w-full text-[10px] font-black uppercase tracking-[0.25em] text-white/30 hover:text-white/60 transition-all"
+          >
+            {mode === 'login' ? 'New student? Register account' : 'Back to sign in'}
           </button>
         </form>
       </div>

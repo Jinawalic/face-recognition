@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
+import { getBearerToken, getStudentIdFromToken } from '@/lib/auth-token'
+
+export const runtime = 'nodejs'
 
 export async function GET(
   request: NextRequest,
@@ -7,6 +10,25 @@ export async function GET(
 ) {
   try {
     const { id } = await params
+    const token = getBearerToken(request.headers.get('authorization'))
+    const studentId = getStudentIdFromToken(token)
+
+    if (studentId) {
+      const existingResult = await prisma.result.findFirst({
+        where: {
+          studentId,
+          examId: id
+        },
+        select: { id: true }
+      })
+
+      if (existingResult) {
+        return NextResponse.json(
+          { message: 'You have already taken this exam.' },
+          { status: 409 }
+        )
+      }
+    }
 
     const questions = await prisma.question.findMany({
       where: { examId: id },

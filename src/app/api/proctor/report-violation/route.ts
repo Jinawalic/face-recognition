@@ -26,26 +26,15 @@ export async function POST(request: NextRequest) {
         meta: meta || {},
       }
     })
-
-    // Check violation count to auto-ban (optional business logic)
     const count = await prisma.violation.count({
       where: { studentId: student.id }
     })
-
-    let is_banned = false
-    if (count >= 3) {
-      await prisma.student.update({
-        where: { id: student.id },
-        data: { isBanned: true }
-      })
-      is_banned = true
-    }
 
     return NextResponse.json({ 
       success: true, 
       id: violation.id, 
       count,
-      is_banned 
+      is_banned: false
     })
   } catch (error) {
     console.error('Report violation error:', error)

@@ -1,21 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { findStudentByMatricNumber } from '@/lib/auth-db'
+import { upsertStudentAccount } from '@/lib/auth-db'
 
 export const runtime = 'nodejs'
 
 export async function POST(request: NextRequest) {
   try {
-    const { matricNumber } = await request.json()
+    const body = await request.json().catch(() => null)
+    const matricNumber = typeof body?.matricNumber === 'string' ? body.matricNumber.trim() : ''
+    const fullName = typeof body?.fullName === 'string' ? body.fullName.trim() : ''
 
-    if (!matricNumber) {
-      return NextResponse.json({ message: 'Matric number is required' }, { status: 400 })
+    if (!matricNumber || !fullName) {
+      return NextResponse.json({ message: 'Full name and matric number are required' }, { status: 400 })
     }
 
-    const student = await findStudentByMatricNumber(matricNumber.toUpperCase())
-
-    if (!student) {
-      return NextResponse.json({ message: 'Student record not found' }, { status: 404 })
-    }
+    const student = await upsertStudentAccount({ matricNumber, fullName })
 
     return NextResponse.json({
       token: `std_${student.id}_${Date.now()}`,
@@ -23,14 +21,15 @@ export async function POST(request: NextRequest) {
       matricNumber: student.matricNumber,
       user: {
         id: student.id,
+        matricNumber: student.matricNumber,
         firstName: student.firstName,
         lastName: student.lastName,
         surname: student.surname,
-        department: student.department
-      }
+        department: student.department,
+      },
     })
   } catch (error) {
-    console.error('Login error:', {
+    console.error('Student register error:', {
       name: error instanceof Error ? error.name : 'Unknown',
       message: error instanceof Error ? error.message : String(error),
       code: typeof error === 'object' && error && 'code' in error ? (error as any).code : undefined,

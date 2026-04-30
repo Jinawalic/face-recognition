@@ -72,4 +72,6 @@ model Result {
   answers   Json
   completed Boolean  @default(true)
   createdAt DateTime @default(now())
+
+  @@unique([studentId, examId])
 }

@@ -8617,6 +8617,7 @@ export namespace Prisma {
 
   export type ResultWhereUniqueInput = Prisma.AtLeast<{
     id?: string
+    studentId_examId?: ResultStudentIdExamIdCompoundUniqueInput
     AND?: ResultWhereInput | ResultWhereInput[]
     OR?: ResultWhereInput[]
     NOT?: ResultWhereInput | ResultWhereInput[]
@@ -8629,7 +8630,7 @@ export namespace Prisma {
     createdAt?: DateTimeFilter<"Result"> | Date | string
     student?: XOR<StudentScalarRelationFilter, StudentWhereInput>
     exam?: XOR<ExamScalarRelationFilter, ExamWhereInput>
-  }, "id">
+  }, "id" | "studentId_examId">
 
   export type ResultOrderByWithAggregationInput = {
     id?: SortOrder
@@ -9496,6 +9497,11 @@ export namespace Prisma {
     gt?: InputJsonValue | JsonFieldRefInput<$PrismaModel>
     gte?: InputJsonValue | JsonFieldRefInput<$PrismaModel>
     not?: InputJsonValue | JsonFieldRefInput<$PrismaModel> | JsonNullValueFilter
+  }
+
+  export type ResultStudentIdExamIdCompoundUniqueInput = {
+    studentId: string
+    examId: string
   }
 
   export type ResultCountOrderByAggregateInput = {

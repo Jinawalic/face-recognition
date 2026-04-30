@@ -2,18 +2,36 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { apiPost } from '@/lib/api'
-import { clearStudentAuth, loadViolationCount, markBanned, saveViolationCount } from '@/lib/storage'
+import { loadViolationCount, saveViolationCount } from '@/lib/storage'
+import {
+  clearExamSession,
+  ensureExamStartAt,
+  EXAM_DURATION_MS,
+  markExamSubmitted,
+} from '@/lib/exam-session'
 import { useAuth } from '@/lib/AuthContext'
 import { DetectionStatus } from '@/components/ProctorCanvas'
 import DetectionStatusPanel from '@/components/DetectionStatusPanel'
-import { Camera, AlertTriangle, ChevronLeft, Loader2 } from 'lucide-react'
+import { Camera, AlertTriangle, ChevronLeft, Clock3, Loader2 } from 'lucide-react'
 
 import ProctorCanvas from '@/components/ProctorCanvas'
 
-interface Question { id: string; questionText: string; options: string[]; correctIndex: number; }
+interface Question {
+  id: string
+  questionText: string
+  options: string[]
+  correctIndex: number
+}
+
+function formatTime(ms: number): string {
+  const totalSeconds = Math.max(0, Math.ceil(ms / 1000))
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+}
 
 export default function ActiveExam({ apiBaseUrl, examId }: { apiBaseUrl: string; examId: string }) {
-  const { studentAuth, logoutStudent } = useAuth()
+  const { studentAuth } = useAuth()
   const router = useRouter()
 
   const matricNumber = studentAuth?.user?.matricNumber || studentAuth?.user?.username || 'unknown'
@@ -21,18 +39,31 @@ export default function ActiveExam({ apiBaseUrl, examId }: { apiBaseUrl: string;
   const [violationCount, setViolationCount] = useState(() => loadViolationCount(matricNumber))
   const [activeWarning, setActiveWarning] = useState('')
   const [terminated, setTerminated] = useState(false)
+  const [accessError, setAccessError] = useState('')
   const [questions, setQuestions] = useState<Question[]>([])
   const [loadingQuestions, setLoadingQuestions] = useState(true)
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
   const [answers, setAnswers] = useState<Record<number, string>>({})
   const [showConfirmSubmit, setShowConfirmSubmit] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [examStartAt, setExamStartAt] = useState<number | null>(null)
+  const [timeLeftMs, setTimeLeftMs] = useState(EXAM_DURATION_MS)
+  const [timeExpired, setTimeExpired] = useState(false)
 
   const [detectionStatus, setDetectionStatus] = useState<DetectionStatus>({
-    faceDetected: false, multipleFaces: false, phoneDetected: false, bookDetected: false, laptopDetected: false, tabletDetected: false
+    faceDetected: false,
+    multipleFaces: false,
+    phoneDetected: false,
+    bookDetected: false,
+    laptopDetected: false,
+    tabletDetected: false,
   })
 
   const violationCountRef = useRef(violationCount)
+  const answersRef = useRef(answers)
+  const questionsRef = useRef(questions)
+  const submissionLockedRef = useRef(false)
+  const autoSubmitTriggeredRef = useRef(false)
 
   useEffect(() => {
     violationCountRef.current = violationCount
@@ -40,45 +71,127 @@ export default function ActiveExam({ apiBaseUrl, examId }: { apiBaseUrl: string;
   }, [matricNumber, violationCount])
 
   useEffect(() => {
+    answersRef.current = answers
+  }, [answers])
+
+  useEffect(() => {
+    questionsRef.current = questions
+  }, [questions])
+
+  useEffect(() => {
+    const startAt = ensureExamStartAt(examId)
+    setExamStartAt(startAt)
+    const remaining = Math.max(0, EXAM_DURATION_MS - (Date.now() - startAt))
+    setTimeLeftMs(remaining)
+    setTimeExpired(remaining <= 0)
+  }, [examId])
+
+  useEffect(() => {
     async function loadQuestions() {
       try {
         const response = await fetch(`${apiBaseUrl}/exam/questions/${examId}`, {
-          headers: { 'Authorization': `Bearer ${studentAuth?.token}` }
+          headers: { Authorization: `Bearer ${studentAuth?.token}` },
         })
         const data = await response.json()
+
+        if (response.status === 409) {
+          clearExamSession(examId)
+          setAccessError(data?.message || 'You have already taken this exam.')
+          setQuestions([])
+          return
+        }
+
+        if (!response.ok) {
+          throw new Error(data?.message || 'Failed to load exam questions')
+        }
+
         setQuestions(Array.isArray(data) ? data : [])
-      } catch {
-        alert('Failed to load exam questions')
+      } catch (error: any) {
+        setAccessError(error?.message || 'Failed to load exam questions. Please try again.')
       } finally {
         setLoadingQuestions(false)
       }
     }
+
     if (studentAuth?.token) loadQuestions()
   }, [apiBaseUrl, examId, studentAuth?.token])
 
-  const submitExam = async () => {
+  const submitExam = async (isAutoSubmit = false) => {
+    if (submissionLockedRef.current) return
+
+    submissionLockedRef.current = true
     setSubmitting(true)
+    let completed = false
+
     try {
       const res = await fetch(`${apiBaseUrl}/exam/submit`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${studentAuth?.token}` },
-        body: JSON.stringify({ matricNumber, examId, answers, questions })
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${studentAuth?.token}` },
+        body: JSON.stringify({
+          matricNumber,
+          examId,
+          answers: answersRef.current,
+          questions: questionsRef.current,
+        }),
       })
+
       const data = await res.json()
+
       if (res.ok && data.score !== undefined) {
+        completed = true
+        markExamSubmitted(examId)
+        clearExamSession(examId)
         sessionStorage.setItem(`exam_score_${examId}`, JSON.stringify({ score: data.score, total: data.total }))
         router.push(`/dashboard/exam/${examId}/success`)
-      } else {
-        throw new Error(data.message || 'Failed to submit exam. Please try again.')
+        return
       }
-    } catch (e: any) {
-      console.error('Failed to submit exam result', e)
-      alert(e.message || 'Connection error. Please check your internet and try again.')
-    } finally {
+
+      if (res.status === 409) {
+        clearExamSession(examId)
+        setAccessError(data?.message || 'You have already submitted this exam.')
+        return
+      }
+
+      throw new Error(data?.message || 'Failed to submit exam. Please try again.')
+    } catch (error: any) {
       setSubmitting(false)
-      console.log("Loading COCO-SSD (mobilenet_v2)...");
+      submissionLockedRef.current = false
+      if (isAutoSubmit && timeExpired) {
+        setAccessError(error?.message || 'Time is up, but the exam could not be submitted automatically.')
+        return
+      }
+      console.error('Failed to submit exam result', error)
+      alert(error?.message || 'Connection error. Please check your internet and try again.')
+    } finally {
+      if (!completed) {
+        setSubmitting(false)
+        if (!timeExpired) {
+          submissionLockedRef.current = false
+        }
+      }
+      console.log('Loading COCO-SSD (mobilenet_v2)...')
     }
   }
+
+  useEffect(() => {
+    if (!examStartAt || loadingQuestions || accessError || terminated) return
+
+    const syncTimer = () => {
+      const remaining = Math.max(0, EXAM_DURATION_MS - (Date.now() - examStartAt))
+      setTimeLeftMs(remaining)
+      const expired = remaining <= 0
+      setTimeExpired(expired)
+
+      if (expired && !autoSubmitTriggeredRef.current && !submissionLockedRef.current) {
+        autoSubmitTriggeredRef.current = true
+        void submitExam(true)
+      }
+    }
+
+    syncTimer()
+    const interval = window.setInterval(syncTimer, 1000)
+    return () => window.clearInterval(interval)
+  }, [accessError, examStartAt, loadingQuestions, terminated])
 
   const strikeLimit = 10
   const onStrike = async ({ type, message, meta }: any) => {
@@ -91,25 +204,19 @@ export default function ActiveExam({ apiBaseUrl, examId }: { apiBaseUrl: string;
     try {
       await apiPost(
         `${apiBaseUrl}/proctor/report-violation`,
-        { matricNumber, type, message, meta, client_violation_count: nextCount, timestamp: new Date().toISOString() },
+        {
+          matricNumber,
+          type,
+          message,
+          meta,
+          client_violation_count: nextCount,
+          timestamp: new Date().toISOString(),
+        },
         { token: studentAuth?.token }
       )
-    } catch { }
-  }
-
-  const hardTerminate = async () => {
-    const msg = 'You have been logged out due to ten consecutive irregularities. Contact your administrator.'
-    markBanned(matricNumber, msg)
-    try {
-      await apiPost(
-        `${apiBaseUrl}/proctor/report-violation`,
-        { matricNumber, type: 'TEN_STRIKES_BAN', message: msg, meta: { violationCount: 10 }, client_violation_count: 10, timestamp: new Date().toISOString() },
-        { token: studentAuth?.token }
-      )
-    } catch { }
-    logoutStudent()
-    setTerminated(true)
-    router.push('/login?kickedOut=true')
+    } catch {
+      // Ignore proctoring write failures in the UI; the backend still controls submission.
+    }
   }
 
   useEffect(() => {
@@ -121,14 +228,39 @@ export default function ActiveExam({ apiBaseUrl, examId }: { apiBaseUrl: string;
 
   const statusPill = useMemo(() => {
     if (terminated) return { text: 'Session Terminated', cls: 'bg-red-500/15 text-red-200 border-red-500/30' }
+    if (timeExpired) return { text: 'Time Expired', cls: 'bg-red-500/15 text-red-200 border-red-500/30' }
     return { text: 'Monitoring Active', cls: 'bg-emerald-500/15 text-emerald-200 border-emerald-500/30' }
-  }, [terminated])
+  }, [terminated, timeExpired])
+
+  const isExamLocked = terminated || timeExpired || Boolean(accessError)
+
+  if (accessError) {
+    return (
+      <div className="mt-4 lg:mt-8 rounded-3xl border border-red-500/20 bg-red-500/10 p-8 shadow-2xl shadow-red-500/5">
+        <div className="flex items-center gap-2 text-red-300 font-black text-xs uppercase tracking-widest mb-4">
+          <AlertTriangle className="w-4 h-4" /> Exam Locked
+        </div>
+        <h2 className="text-2xl font-bold text-white mb-3">You cannot start this exam again</h2>
+        <p className="text-white/70 mb-6 leading-relaxed">{accessError}</p>
+        <button
+          onClick={() => router.push('/dashboard')}
+          className="px-6 py-3 rounded-2xl bg-[#0091ad] hover:bg-[#007a91] text-white font-bold transition-all"
+        >
+          Back to Dashboard
+        </button>
+      </div>
+    )
+  }
 
   return (
     <>
-      <div className="flex items-center justify-between border-t lg:border-none border-white/5 pt-4 lg:pt-0 mb-6">
+      <div className="flex items-center justify-between border-t lg:border-none border-white/5 pt-4 lg:pt-0 mb-6 gap-3">
         <div className={['rounded-full border px-4 py-1.5 text-[10px] lg:text-xs font-black uppercase tracking-widest', statusPill.cls].join(' ')}>
           {statusPill.text}
+        </div>
+        <div className="rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-[10px] lg:text-xs font-black uppercase tracking-widest text-white/80 flex items-center gap-2">
+          <Clock3 className="w-4 h-4 text-[#0091ad]" />
+          {timeExpired ? '00:00' : formatTime(timeLeftMs)}
         </div>
       </div>
 
@@ -145,13 +277,15 @@ export default function ActiveExam({ apiBaseUrl, examId }: { apiBaseUrl: string;
         <div className="relative rounded-3xl border border-white/10 bg-white/5 p-4 lg:p-10 shadow-2xl backdrop-blur-xl min-h-[400px]">
           <div className="flex flex-col lg:flex-row gap-8">
             <div className="flex-1">
-              <div className="mb-8 flex items-center justify-between bg-white/5 p-6 rounded-2xl border border-white/10">
+              <div className="mb-8 flex items-center justify-between bg-white/5 p-6 rounded-2xl border border-white/10 gap-4">
                 <div>
                   <h2 className="text-2xl font-bold text-white">Question {currentQuestionIndex + 1}</h2>
                   <p className="text-sm text-white/50 mt-1">Select the best answer from the options provided.</p>
                 </div>
                 <div className="bg-white/10 px-4 py-2 rounded-xl border border-white/10">
-                  <span className="text-xs font-bold text-[#0091ad] uppercase tracking-widest">{currentQuestionIndex + 1} / {questions.length}</span>
+                  <span className="text-xs font-bold text-[#0091ad] uppercase tracking-widest">
+                    {currentQuestionIndex + 1} / {questions.length}
+                  </span>
                 </div>
               </div>
 
@@ -162,16 +296,38 @@ export default function ActiveExam({ apiBaseUrl, examId }: { apiBaseUrl: string;
                     {questions[currentQuestionIndex].options.map((option, idx) => (
                       <button
                         key={idx}
-                        onClick={() => setAnswers({ ...answers, [currentQuestionIndex]: option })}
-                        className={['w-full text-left p-2 rounded-2xl border-2 transition-all group relative overflow-hidden',
-                          answers[currentQuestionIndex] === option ? 'bg-[#0091ad]/20 border-[#0091ad] ring-4 ring-[#0091ad]/10' : 'bg-white/5 border-white/10 hover:border-white/20 hover:bg-white/10'].join(' ')}
+                        onClick={() => {
+                          if (isExamLocked || submitting) return
+                          setAnswers({ ...answers, [currentQuestionIndex]: option })
+                        }}
+                        disabled={isExamLocked || submitting}
+                        className={[
+                          'w-full text-left p-2 rounded-2xl border-2 transition-all group relative overflow-hidden',
+                          answers[currentQuestionIndex] === option
+                            ? 'bg-[#0091ad]/20 border-[#0091ad] ring-4 ring-[#0091ad]/10'
+                            : 'bg-white/5 border-white/10 hover:border-white/20 hover:bg-white/10',
+                          isExamLocked || submitting ? 'opacity-70 cursor-not-allowed' : '',
+                        ].join(' ')}
                       >
                         <div className="flex items-center gap-4 relative z-10">
-                          <div className={['w-10 h-10 rounded-xl flex items-center justify-center font-bold text-lg border transition-all',
-                            answers[currentQuestionIndex] === option ? 'bg-[#0091ad] border-[#0091ad] text-white' : 'bg-white/10 border-white/10 text-white/40'].join(' ')}>
+                          <div
+                            className={[
+                              'w-10 h-10 rounded-xl flex items-center justify-center font-bold text-lg border transition-all',
+                              answers[currentQuestionIndex] === option
+                                ? 'bg-[#0091ad] border-[#0091ad] text-white'
+                                : 'bg-white/10 border-white/10 text-white/40',
+                            ].join(' ')}
+                          >
                             {String.fromCharCode(65 + idx)}
                           </div>
-                          <span className={['text-lg transition-all', answers[currentQuestionIndex] === option ? 'text-white font-semibold' : 'text-white/70'].join(' ')}>{option}</span>
+                          <span
+                            className={[
+                              'text-lg transition-all',
+                              answers[currentQuestionIndex] === option ? 'text-white font-semibold' : 'text-white/70',
+                            ].join(' ')}
+                          >
+                            {option}
+                          </span>
                         </div>
                       </button>
                     ))}
@@ -192,8 +348,8 @@ export default function ActiveExam({ apiBaseUrl, examId }: { apiBaseUrl: string;
 
               <div className="flex items-center justify-between pt-8 border-t border-white/10 mt-12">
                 <button
-                  onClick={() => setCurrentQuestionIndex(prev => Math.max(0, prev - 1))}
-                  disabled={currentQuestionIndex === 0}
+                  onClick={() => setCurrentQuestionIndex((prev) => Math.max(0, prev - 1))}
+                  disabled={currentQuestionIndex === 0 || isExamLocked || submitting}
                   className="px-8 py-3 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 disabled:opacity-30 disabled:cursor-not-allowed text-sm font-bold transition-all flex items-center gap-2"
                 >
                   <ChevronLeft className="w-4 h-4" /> Previous
@@ -201,8 +357,9 @@ export default function ActiveExam({ apiBaseUrl, examId }: { apiBaseUrl: string;
 
                 {currentQuestionIndex < questions.length - 1 ? (
                   <button
-                    onClick={() => setCurrentQuestionIndex(prev => Math.min(questions.length - 1, prev + 1))}
-                    className="px-10 py-3 rounded-2xl bg-[#0091ad] hover:bg-[#007a91] text-sm font-bold text-white shadow-lg shadow-[#0091ad]/20 transition-all active:scale-95"
+                    onClick={() => setCurrentQuestionIndex((prev) => Math.min(questions.length - 1, prev + 1))}
+                    disabled={isExamLocked || submitting}
+                    className="px-10 py-3 rounded-2xl bg-[#0091ad] hover:bg-[#007a91] text-sm font-bold text-white shadow-lg shadow-[#0091ad]/20 transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     Next Question
                   </button>
@@ -210,7 +367,8 @@ export default function ActiveExam({ apiBaseUrl, examId }: { apiBaseUrl: string;
                   questions.length > 0 && (
                     <button
                       onClick={() => setShowConfirmSubmit(true)}
-                      className="px-10 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-600 text-sm font-bold text-white shadow-lg shadow-emerald-500/20 transition-all active:scale-95"
+                      disabled={isExamLocked || submitting}
+                      className="px-10 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-600 text-sm font-bold text-white shadow-lg shadow-emerald-500/20 transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       Submit Exam
                     </button>
@@ -225,7 +383,9 @@ export default function ActiveExam({ apiBaseUrl, examId }: { apiBaseUrl: string;
                   <div className="p-4 border-b border-white/10 bg-white/5 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-                      <span className="text-xs font-bold uppercase tracking-widest text-white/70 flex items-center gap-1.5"><Camera className="w-3.5 h-3.5" /> Live Feed</span>
+                      <span className="text-xs font-bold uppercase tracking-widest text-white/70 flex items-center gap-1.5">
+                        <Camera className="w-3.5 h-3.5" /> Live Feed
+                      </span>
                     </div>
                     <div className="flex items-center gap-2 text-xs font-medium bg-red-500/10 text-red-400 px-2 py-1 rounded-lg border border-red-500/20">
                       Strikes: {violationCount}/10
@@ -234,7 +394,7 @@ export default function ActiveExam({ apiBaseUrl, examId }: { apiBaseUrl: string;
 
                   <div className="aspect-video relative">
                     <ProctorCanvas
-                      enabled={!terminated}
+                      enabled={!terminated && !timeExpired}
                       apiBaseUrl={apiBaseUrl}
                       matricNumber={matricNumber}
                       authToken={studentAuth?.token}
@@ -274,11 +434,18 @@ export default function ActiveExam({ apiBaseUrl, examId }: { apiBaseUrl: string;
                   Review
                 </button>
                 <button
-                  onClick={submitExam}
-                  disabled={submitting}
-                  className="px-6 py-3 rounded-2xl bg-[#0091ad] hover:bg-[#007a91] text-white font-bold transition-all shadow-lg shadow-[#0091ad]/20 active:scale-95 disabled:opacity-60 flex items-center gap-2"
+                  onClick={() => submitExam(false)}
+                  disabled={submitting || timeExpired}
+                  className="px-6 py-3 rounded-2xl bg-[#0091ad] hover:bg-[#007a91] text-white font-bold transition-all shadow-lg shadow-[#0091ad]/20 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2 justify-center"
                 >
-                  {submitting ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin inline-block" />Saving...</> : 'Yes, Submit'}
+                  {submitting ? (
+                    <>
+                      <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin inline-block" />
+                      Saving...
+                    </>
+                  ) : (
+                    'Yes, Submit'
+                  )}
                 </button>
               </div>
             </div>
