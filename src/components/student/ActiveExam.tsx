@@ -76,12 +76,13 @@ export default function ActiveExam({ apiBaseUrl, examId }: { apiBaseUrl: string;
       alert(e.message || 'Connection error. Please check your internet and try again.')
     } finally {
       setSubmitting(false)
+      console.log("Loading COCO-SSD (mobilenet_v2)...");
     }
   }
 
   const strikeLimit = 10
   const onStrike = async ({ type, message, meta }: any) => {
-    setActiveWarning(message || 'Warning: Irregularity Detected!')
+    setActiveWarning(message || 'Warning: Potential Academic Irregularity Detected!')
     const nextCount = Math.min(strikeLimit, (violationCountRef.current || 0) + 1)
     violationCountRef.current = nextCount
     setViolationCount(nextCount)
@@ -113,7 +114,8 @@ export default function ActiveExam({ apiBaseUrl, examId }: { apiBaseUrl: string;
 
   useEffect(() => {
     if (violationCount >= strikeLimit && !terminated) {
-      hardTerminate()
+      console.log('Strike limit reached, but auto-kick is disabled as per admin request.')
+      // hardTerminate()
     }
   }, [violationCount, terminated])
 
@@ -136,7 +138,7 @@ export default function ActiveExam({ apiBaseUrl, examId }: { apiBaseUrl: string;
             <AlertTriangle className="w-4 h-4" /> Critical Warning
           </div>
           <p className="text-[11px] lg:text-xs text-red-200/50 leading-relaxed font-bold uppercase tracking-tight">
-            Exceeding 10 irregularities will trigger an automatic <span className="text-red-400">permanent suspension</span>. Results will be invalidated.
+            Irregularities are monitored in real-time and recorded for administrative review. Maintain professional conduct.
           </p>
         </div>
 

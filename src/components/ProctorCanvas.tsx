@@ -78,20 +78,24 @@ export default function ProctorCanvas({
   const objectModelRef = useRef<cocoSsd.ObjectDetection | null>(null)
 
   const lastStrikeAtRef = useRef(0)
-  const noFaceSinceRef = useRef<number | null>(null)
-  const lookingAwaySinceRef = useRef<number | null>(null)
+  const visualViolationSinceRef = useRef<number | null>(null)
   const multiFaceSinceRef = useRef<number | null>(null)
   const prohibitedSinceRef = useRef<number | null>(null)
+  const currentObjectsRef = useRef({
+    phone: false,
+    laptop: false,
+    book: false,
+    tablet: false
+  })
 
   const [status, setStatus] = useState('Idle')
   const [modelsReady, setModelsReady] = useState(false)
   const [cameraReady, setCameraReady] = useState(false)
 
-  const strikeLimitReached = useMemo(() => violationCount >= 3, [violationCount])
+  const strikeLimitReached = useMemo(() => violationCount >= 10, [violationCount])
 
   const strikeCooldownMs = 2500
-  const noFaceMs = 2000
-  const lookingAwayMs = 2000
+  const lookingAwayMs = 7000
   const multiFaceMs = 1000
   const prohibitedMs = 900
 
@@ -119,10 +123,10 @@ export default function ProctorCanvas({
 
         // Try load COCO-SSD in background
         try {
-          console.log("Loading COCO-SSD...");
-          const cocoPromise = cocoSsd.load({ base: 'lite_mobilenet_v2' });
+          console.log("Loading COCO-SSD (mobilenet_v2)...");
+          const cocoPromise = cocoSsd.load({ base: 'mobilenet_v2' });
           const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error("COCO-SSD timeout")), 8000)
+            setTimeout(() => reject(new Error("COCO-SSD timeout")), 20000)
           );
           const coco = await Promise.race([cocoPromise, timeoutPromise]) as cocoSsd.ObjectDetection;
           objectModelRef.current = coco;
@@ -231,21 +235,20 @@ export default function ProctorCanvas({
 
       const t = now()
 
-      if (!faceResults?.length) {
-        if (noFaceSinceRef.current == null) noFaceSinceRef.current = t
-      } else {
-        noFaceSinceRef.current = null
-      }
-
       let lookingAway = false
       if (faceResults?.length === 1) {
         lookingAway = computeLookingAway(faceResults[0].landmarks)
       }
 
       if (lookingAway) {
-        if (lookingAwaySinceRef.current == null) lookingAwaySinceRef.current = t
+        // removed
+      }
+
+      const isVisualViolating = (faceResults?.length || 0) === 0 || lookingAway
+      if (isVisualViolating) {
+        if (visualViolationSinceRef.current == null) visualViolationSinceRef.current = t
       } else {
-        lookingAwaySinceRef.current = null
+        visualViolationSinceRef.current = null
       }
 
       if ((faceResults?.length || 0) > 1) {
@@ -255,12 +258,6 @@ export default function ProctorCanvas({
       }
 
       let prohibited: cocoSsd.DetectedObject | null = null
-      let currentObjects = {
-        phone: false,
-        laptop: false,
-        book: false,
-        tablet: false
-      }
 
       if (t - lastObjectDetectAt > 550) {
         lastObjectDetectAt = t
@@ -268,14 +265,18 @@ export default function ProctorCanvas({
         if (model) {
           try {
             const preds = await model.detect(video)
-            preds.forEach(p => {
-              if (p.class === 'cell phone' && p.score >= 0.5) currentObjects.phone = true
-              if (p.class === 'laptop' && p.score >= 0.5) currentObjects.laptop = true
-              if (p.class === 'book' && p.score >= 0.5) currentObjects.book = true
-              // coco-ssd doesn't have 'tablet' specifically, but often misidentifies or uses 'laptop'
-            })
+            // console.log('Proctor: detected objects', preds)
             
-            prohibited = preds.find((p) => PROHIBITED_OBJECTS.has(p.class) && p.score >= 0.5) || null
+            // Reset for this check
+            const newObjects = { phone: false, laptop: false, book: false, tablet: false }
+            preds.forEach(p => {
+              if (p.class === 'cell phone' && p.score >= 0.3) newObjects.phone = true
+              if (p.class === 'laptop' && p.score >= 0.3) newObjects.laptop = true
+              if (p.class === 'book' && p.score >= 0.3) newObjects.book = true
+            })
+            currentObjectsRef.current = newObjects
+            
+            prohibited = preds.find((p) => PROHIBITED_OBJECTS.has(p.class) && p.score >= 0.3) || null
           } catch {
             prohibited = null
           }
@@ -292,18 +293,15 @@ export default function ProctorCanvas({
       onStatusUpdate?.({
         faceDetected: (faceResults?.length || 0) > 0,
         multipleFaces: (faceResults?.length || 0) > 1,
-        phoneDetected: currentObjects.phone,
-        bookDetected: currentObjects.book,
-        laptopDetected: currentObjects.laptop,
-        tabletDetected: currentObjects.tablet
+        phoneDetected: currentObjectsRef.current.phone,
+        bookDetected: currentObjectsRef.current.book,
+        laptopDetected: currentObjectsRef.current.laptop,
+        tabletDetected: currentObjectsRef.current.tablet
       })
 
       let warning = ''
       let overlayAlpha = 0
 
-      const noFaceFor = noFaceSinceRef.current != null ? t - noFaceSinceRef.current : 0
-      const lookingAwayFor =
-        lookingAwaySinceRef.current != null ? t - lookingAwaySinceRef.current : 0
       const multiFaceFor =
         multiFaceSinceRef.current != null ? t - multiFaceSinceRef.current : 0
       const prohibitedFor =
@@ -315,10 +313,7 @@ export default function ProctorCanvas({
       } else if (prohibitedSinceRef.current != null) {
         warning = 'Warning: Prohibited Object Detected!'
         overlayAlpha = 0.18
-      } else if (noFaceSinceRef.current != null) {
-        warning = 'Warning: No Face / Looking Away!'
-        overlayAlpha = 0.12
-      } else if (lookingAwaySinceRef.current != null) {
+      } else if (visualViolationSinceRef.current != null) {
         warning = 'Warning: No Face / Looking Away!'
         overlayAlpha = 0.12
       }
@@ -331,6 +326,8 @@ export default function ProctorCanvas({
         ctx.fillRect(0, 0, w, h)
       }
 
+      const visualViolationFor = visualViolationSinceRef.current != null ? t - visualViolationSinceRef.current : 0
+
       if (multiFaceFor >= multiFaceMs) {
         await issueStrike({ type: 'MULTIPLE_FACES', message: 'Warning: Multiple Faces Detected!' })
         multiFaceSinceRef.current = null
@@ -341,13 +338,12 @@ export default function ProctorCanvas({
           meta: { objects: Array.from(PROHIBITED_OBJECTS) },
         })
         prohibitedSinceRef.current = null
-      } else if (noFaceFor >= noFaceMs || lookingAwayFor >= lookingAwayMs) {
+      } else if (visualViolationFor >= 7000) {
         await issueStrike({
-          type: noFaceFor >= noFaceMs ? 'NO_FACE' : 'LOOKING_AWAY',
+          type: 'VISUAL_VIOLATION',
           message: 'Warning: No Face / Looking Away!',
         })
-        noFaceSinceRef.current = null
-        lookingAwaySinceRef.current = null
+        visualViolationSinceRef.current = t // Reset to allow recurring strike every 7s
       }
 
       const faceState =

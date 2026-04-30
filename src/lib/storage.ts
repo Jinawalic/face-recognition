@@ -112,6 +112,7 @@ export interface AuthState {
   token: string;
   role: 'student' | 'admin';
   user: {
+    id?: string;
     matricNumber?: string;
     username?: string;
     surname?: string;

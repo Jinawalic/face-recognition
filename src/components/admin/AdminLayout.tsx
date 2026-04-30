@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
+import { Toaster } from 'react-hot-toast'
 import { useRouter, usePathname } from 'next/navigation'
 import { useAuth } from '@/lib/AuthContext'
 import {
@@ -10,7 +11,8 @@ import {
   LayoutDashboard,
   BarChart3,
   Menu,
-  X
+  X,
+  ShieldBan
 } from 'lucide-react'
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -31,14 +33,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   const navItems = [
     { href: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { href: '/admin/add-students', label: 'Add Students', icon: UserPlus },
-    { href: '/admin/view-registered', label: 'View Registered', icon: Users },
+    { href: '/admin/view-registered', label: 'View Students', icon: Users },
     { href: '/admin/configure-exams', label: 'Configure Exams', icon: FileText },
     { href: '/admin/results', label: 'Results', icon: BarChart3 },
+    { href: '/admin/violations', label: 'Violations', icon: ShieldBan },
   ]
 
   return (
     <div className="flex h-screen bg-[#0c1929] text-white overflow-hidden relative">
+      <Toaster position="top-right" toastOptions={{
+        style: { background: '#091520', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }
+      }} />
       {/* Mobile Top Bar */}
       <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-[#091520] border-b border-white/10 z-[100] px-6 flex items-center justify-between">
         <div className="flex items-center gap-2">

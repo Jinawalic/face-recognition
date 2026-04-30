@@ -14,6 +14,13 @@ export async function POST(request: NextRequest) {
       data: { isBanned: is_banned }
     })
 
+    // Reset violations if unbanning
+    if (!is_banned) {
+      await prisma.violation.deleteMany({
+        where: { studentId: student.id }
+      })
+    }
+
     return NextResponse.json({ success: true, isBanned: student.isBanned })
   } catch (error) {
     console.error('Set banned error:', error)

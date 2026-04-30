@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import prisma from '@/lib/prisma'
+import { findStudentByMatricNumber } from '@/lib/auth-db'
+
+export const runtime = 'nodejs'
 
 export async function POST(request: NextRequest) {
   try {
@@ -9,9 +11,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: 'Matric number is required' }, { status: 400 })
     }
 
-    const student = await prisma.student.findUnique({
-      where: { matricNumber: matricNumber.toUpperCase() },
-    })
+    const student = await findStudentByMatricNumber(matricNumber.toUpperCase())
 
     if (!student) {
       return NextResponse.json({ message: 'Student record not found' }, { status: 404 })
@@ -37,7 +37,13 @@ export async function POST(request: NextRequest) {
       }
     })
   } catch (error) {
-    console.error('Login error:', error)
+    console.error('Login error:', {
+      name: error instanceof Error ? error.name : 'Unknown',
+      message: error instanceof Error ? error.message : String(error),
+      code: typeof error === 'object' && error && 'code' in error ? (error as any).code : undefined,
+      meta: typeof error === 'object' && error && 'meta' in error ? (error as any).meta : undefined,
+      stack: error instanceof Error ? error.stack : undefined,
+    })
     return NextResponse.json({ message: 'Internal server error' }, { status: 500 })
   }
 }

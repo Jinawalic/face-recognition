@@ -1,6 +1,7 @@
 'use client'
 import { useState, useMemo } from 'react'
-import { Download, ChevronLeft, ChevronRight, X, ShieldCheck } from 'lucide-react'
+import { Download, ChevronLeft, ChevronRight, X, ShieldCheck, CheckCircle2 } from 'lucide-react'
+import toast from 'react-hot-toast'
 import { useAdminData } from '@/hooks/useAdminData'
 import { apiPost } from '@/lib/api'
 
@@ -59,13 +60,21 @@ export default function Results() {
   }
 
   const restoreStudent = async (matricNumber: string) => {
-    try {
+    const restorePromise = async () => {
       await apiPost(`${apiBaseUrl}/admin/students/set-banned`, { matricNumber, is_banned: false }, { token })
       refreshStudents()
-      setSelectedStudentForViolations((prev: any) => prev ? { ...prev, student: { ...prev.student, is_banned: false } } : null)
-    } catch (e) {
-      console.error(e)
+      setSelectedStudentForViolations((prev: any) => prev ? { 
+        ...prev, 
+        student: { ...prev.student, is_banned: false },
+        violations: [] 
+      } : null)
     }
+
+    toast.promise(restorePromise(), {
+      loading: 'Restoring student...',
+      success: 'Student restored and violations cleared',
+      error: 'Failed to restore student'
+    })
   }
 
   return (

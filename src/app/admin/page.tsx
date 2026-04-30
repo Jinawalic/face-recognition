@@ -51,7 +51,10 @@ export default function AdminLoginPage() {
       login({
         token: data?.token || 'dev-token',
         role: 'admin',
-        user: { username: data?.username || username },
+        user: {
+          id: data?.user?.id,
+          username: data?.user?.username || data?.username || username,
+        },
       })
       router.push('/admin/dashboard')
     } catch (err: any) {
